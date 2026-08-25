@@ -3,16 +3,16 @@ import os
 import random
 import time
 from playwright.async_api import async_playwright
-from playwright_stealth import stealth_async
 
 # --- CONFIGURATION ---
-PRODUCT_URL = "https://www.target.com/p/example-product-id" # Replace with your product URL
-CVV_CODE = "123"                                           # Replace with your card's 3/4-digit CVV
-ARM_PLACE_ORDER = False                                     # Set to True to execute final purchase
+PRODUCT_URL = "https://www.target.com/p/pok--233-mon-trading-card-game--first-partner-illustration-collection--8212-series-3/-/A-1011960739"
+ITEM_QUANTITY = 2                                           # Target quantity to purchase
+CVV_CODE = "123"                                            # Replace with your card's 3/4-digit CVV
+ARM_PLACE_ORDER = True                                     # Set to True to execute final purchase
 
-POLL_INTERVAL_MIN = 3.0                                    # Min delay between stock checks (sec)
-POLL_INTERVAL_MAX = 5.0                                    # Max delay (sec)
-MAX_WAIT_MINUTES = 180                                     # Stops polling after 3 hours (e.g. 3 AM to 6 AM)
+POLL_INTERVAL_MIN = 3.0                                     # Min delay between stock checks (sec)
+POLL_INTERVAL_MAX = 5.0                                     # Max delay (sec)
+MAX_WAIT_MINUTES = 180                                      # Stops polling after 3 hours
 
 async def human_delay(min_sec=0.8, max_sec=1.8):
     """Adds randomized delays to mimic human reaction timing."""
@@ -25,16 +25,19 @@ async def run_full_auto_bot(product_url):
             print(f"Error: {session_file} not found. Please run your 1-time login script first!")
             return
 
-        # Launch browser with saved session state
-        browser = await p.chromium.launch(headless=False)
-        context = await browser.new_context(
-            storage_state=session_file,
-            viewport={"width": 1280, "height": 800},
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        # Launch real installed Chrome using persistent context
+        context = await p.chromium.launch_persistent_context(
+            user_data_dir="./user_data",
+            channel="chrome",  # Uses actual Google Chrome to bypass Akamai bot detection
+            headless=False,
+            no_viewport=True,
+            args=[
+                "--disable-blink-features=AutomationControlled",
+                "--start-maximized"
+            ]
         )
         
-        page = await context.new_page()
-        await stealth_async(page)
+        page = context.pages[0] if context.pages else await context.new_page()
 
         print(f"[{time.strftime('%H:%M:%S')}] Navigating to product page with authenticated session...")
         await page.goto(product_url, wait_until="domcontentloaded")
@@ -69,14 +72,37 @@ async def run_full_auto_bot(product_url):
 
         if not in_stock:
             print("Time limit reached. Stock drop did not occur. Exiting.")
-            await browser.close()
+            await context.close()
             return
 
-        # --- STEP 2: ADD TO CART ---
+        # --- STEP 2: SET QUANTITY & ADD TO CART ---
         try:
+            # Set Quantity to 2
+            qty_selector = '[data-test="fulfillment-qty-select"], select[aria-label*="quantity"], select[id*="quantity"]'
+            qty_element = page.locator(qty_selector).first
+
+            if await qty_element.is_visible(timeout=3000):
+                print(f"Action: Setting quantity to {ITEM_QUANTITY}...")
+                
+                # Check if element is a native HTML select dropdown
+                tag_name = await qty_element.evaluate("el => el.tagName.toLowerCase()")
+                if tag_name == "select":
+                    await qty_element.select_option(str(ITEM_QUANTITY))
+                else:
+                    # Target custom UI dropdown handling
+                    await qty_element.click()
+                    await human_delay(0.3, 0.6)
+                    option = page.locator(f'option[value="{ITEM_QUANTITY}"], li:has-text("{ITEM_QUANTITY}")').first
+                    await option.click()
+                    
+                await human_delay(0.5, 1.0)
+            else:
+                print(f"Quantity dropdown not found. Defaulting to standard stock quantity.")
+
+            # Click Add to Cart
             cart_button = page.locator(cart_button_selector).first
             await cart_button.click()
-            print("Action: Clicked 'Add to Cart'")
+            print(f"Action: Clicked 'Add to Cart' (Qty: {ITEM_QUANTITY})")
             await human_delay(1.0, 1.5)
 
             # Route to Cart Page
@@ -103,10 +129,8 @@ async def run_full_auto_bot(product_url):
             print("Action: Checking for CVV security confirmation...")
             
             try:
-                # 1. Check inside credit card iframe
                 cvv_input = page.frame_locator('iframe[title*="credit card"], iframe[title*="payment"]').locator('input[id*="cvv"], input[name*="cvv"]')
                 
-                # 2. Fallback check for root DOM CVV field
                 if not await cvv_input.is_visible(timeout=3000):
                     cvv_input = page.locator('input[name="cvvValue"], input[id*="cvv"], input[aria-label*="CVV"]').first
 
@@ -136,7 +160,7 @@ async def run_full_auto_bot(product_url):
             print(f"Checkout failed or hit a roadblock: {e}. Aborting mission.")
 
         # Cleanly shut down browser and finish script
-        await browser.close()
+        await context.close()
 
 if __name__ == "__main__":
     asyncio.run(run_full_auto_bot(PRODUCT_URL))
