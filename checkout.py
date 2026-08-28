@@ -10,8 +10,8 @@ from playwright.async_api import async_playwright
 # --- CONFIGURATION ---
 PRODUCT_URL = "https://www.target.com/p/-/A-1011960739"
 ITEM_QUANTITY = 2                                           # Target quantity to purchase
-CVV_CODE = "123"                                            # Replace with your card's 3/4-digit CVV
-ARM_PLACE_ORDER = True                                     # Set to True to execute final purchase
+CVV_CODE = "123"  #NEED TO CHANGE THIS                      # Replace with your card's 3/4-digit CVV
+ARM_PLACE_ORDER = True                                      # Set to True to execute final purchase
 
 POLL_INTERVAL_MIN = 3.0                                     # Min delay between stock checks (sec)
 POLL_INTERVAL_MAX = 5.0                                     # Max delay (sec)
