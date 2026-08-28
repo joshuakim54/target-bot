@@ -1,13 +1,15 @@
 import asyncio
+from pathlib import Path
 from playwright.async_api import async_playwright
 
+SESSION_FILE = Path(__file__).resolve().parent / "target_session.json"
 
 async def save_session():
     async with async_playwright() as p:
-        # Launch real installed Microsoft Edge with a persistent user data directory
+        # Launch real installed Google Chrome with a persistent user data directory
         context = await p.chromium.launch_persistent_context(
-            user_data_dir="./edge_user_data",  # Separate directory for Edge context
-            channel="msedge",  # Uses real installed Microsoft Edge
+            user_data_dir="./chrome_user_data",  # Separate directory for Chrome context
+            channel="chrome",  # Uses real installed Google Chrome
             headless=False,
             no_viewport=True,
             args=[
@@ -33,8 +35,8 @@ async def save_session():
         await asyncio.sleep(120)
 
         # Save storage state
-        await context.storage_state(path="target_session.json")
-        print("\nSUCCESS: Session saved to target_session.json!")
+        await context.storage_state(path=str(SESSION_FILE))
+        print(f"\nSUCCESS: Session saved to {SESSION_FILE}!")
         await context.close()
 
 

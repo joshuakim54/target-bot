@@ -2,17 +2,21 @@ import asyncio
 import os
 import random
 import time
+from pathlib import Path
 from playwright.async_api import async_playwright
 
 # --- CONFIGURATION ---
-PRODUCT_URL = "https://www.target.com/p/pok--233-mon-trading-card-game--first-partner-illustration-collection--8212-series-3/-/A-1011960739"
+PRODUCT_URL = "https://www.target.com/p/-/A-1011960739"
 ITEM_QUANTITY = 2                                           # Target quantity to purchase
 CVV_CODE = "123"                                            # Replace with your card's 3/4-digit CVV
-ARM_PLACE_ORDER = True                                     # Set to True to execute final purchase
+ARM_PLACE_ORDER = False                                     # Set to True to execute final purchase
 
 POLL_INTERVAL_MIN = 3.0                                     # Min delay between stock checks (sec)
 POLL_INTERVAL_MAX = 5.0                                     # Max delay (sec)
 MAX_WAIT_MINUTES = 180                                      # Stops polling after 3 hours
+
+BASE_DIR = Path(__file__).resolve().parent
+SESSION_FILE = BASE_DIR / "target_session.json"
 
 async def human_delay(min_sec=0.8, max_sec=1.8):
     """Adds randomized delays to mimic human reaction timing."""
@@ -20,21 +24,22 @@ async def human_delay(min_sec=0.8, max_sec=1.8):
 
 async def run_full_auto_bot(product_url):
     async with async_playwright() as p:
-        session_file = "target_session.json"
-        if not os.path.exists(session_file):
-            print(f"Error: {session_file} not found. Please run your 1-time login script first!")
+        if not SESSION_FILE.exists():
+            print(f"Error: {SESSION_FILE} not found. Please run your 1-time login script first!")
             return
 
-        # Launch real installed Chrome using persistent context
-        context = await p.chromium.launch_persistent_context(
-            user_data_dir="./user_data",
+        # Load the session saved by save_sesh.py instead of opening a separate profile.
+        browser = await p.chromium.launch(
             channel="chrome",  # Uses actual Google Chrome to bypass Akamai bot detection
             headless=False,
-            no_viewport=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--start-maximized"
             ]
+        )
+        context = await browser.new_context(
+            storage_state=str(SESSION_FILE),
+            viewport=None,
         )
         
         page = context.pages[0] if context.pages else await context.new_page()
@@ -161,6 +166,7 @@ async def run_full_auto_bot(product_url):
 
         # Cleanly shut down browser and finish script
         await context.close()
+        await browser.close()
 
 if __name__ == "__main__":
     asyncio.run(run_full_auto_bot(PRODUCT_URL))
