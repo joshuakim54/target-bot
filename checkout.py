@@ -1,6 +1,8 @@
 import asyncio
 import os
+import platform
 import random
+import subprocess
 import time
 from pathlib import Path
 from playwright.async_api import async_playwright
@@ -14,6 +16,8 @@ ARM_PLACE_ORDER = False                                     # Set to True to exe
 POLL_INTERVAL_MIN = 3.0                                     # Min delay between stock checks (sec)
 POLL_INTERVAL_MAX = 5.0                                     # Max delay (sec)
 MAX_WAIT_MINUTES = 180                                      # Stops polling after 3 hours
+SHUTDOWN_AFTER_TIMEOUT = True                               # Shut down macOS after the wait expires
+MAX_ATTEMPTS = None                                         # Continue polling until the time limit or stock is found
 
 BASE_DIR = Path(__file__).resolve().parent
 SESSION_FILE = BASE_DIR / "target_session.json"
@@ -21,6 +25,22 @@ SESSION_FILE = BASE_DIR / "target_session.json"
 async def human_delay(min_sec=0.8, max_sec=1.8):
     """Adds randomized delays to mimic human reaction timing."""
     await asyncio.sleep(random.uniform(min_sec, max_sec))
+
+def shutdown_computer():
+    """Requests a shutdown on macOS or Windows."""
+    operating_system = platform.system()
+
+    if operating_system == "Darwin":
+        print("Three-hour wait expired. Shutting down the Mac...")
+        subprocess.run(
+            ["osascript", "-e", 'tell application "System Events" to shut down'],
+            check=False,
+        )
+    elif operating_system == "Windows":
+        print("Three-hour wait expired. Shutting down the PC...")
+        subprocess.run(["shutdown", "/s", "/t", "0"], check=False)
+    else:
+        print(f"Shutdown is not configured for {operating_system}.")
 
 async def run_full_auto_bot(product_url):
     async with async_playwright() as p:
@@ -56,7 +76,8 @@ async def run_full_auto_bot(product_url):
 
         # --- STEP 1: POLLING LOOP ---
         in_stock = False
-        while (time.time() - start_time) < max_duration:
+        while ((time.time() - start_time) < max_duration and
+               (MAX_ATTEMPTS is None or attempts < MAX_ATTEMPTS)):
             attempts += 1
             print(f"[{time.strftime('%H:%M:%S')}] Polling stock... (Attempt #{attempts})")
 
@@ -78,6 +99,9 @@ async def run_full_auto_bot(product_url):
         if not in_stock:
             print("Time limit reached. Stock drop did not occur. Exiting.")
             await context.close()
+            await browser.close()
+            if SHUTDOWN_AFTER_TIMEOUT:
+                shutdown_computer()
             return
 
         # --- STEP 2: SET QUANTITY & ADD TO CART ---

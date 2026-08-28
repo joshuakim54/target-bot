@@ -29,10 +29,17 @@ async def save_session():
         print(
             ">>> ACTION REQUIRED: Log into Target in the browser window now! <<<"
         )
-        print("You have 120 seconds to sign in and handle any 2FA codes.")
+        print("The script will finish automatically after login is detected.")
         print("=" * 60 + "\n")
 
-        await asyncio.sleep(120)
+        try:
+            await page.wait_for_function(
+                """() => /sign out|log out/i.test(document.body.innerText)""",
+                timeout=120000,
+            )
+            print("Login detected. Saving the session and closing the script...")
+        except Exception:
+            print("Login was not detected within 120 seconds. Saving the session anyway.")
 
         # Save storage state
         await context.storage_state(path=str(SESSION_FILE))
