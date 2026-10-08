@@ -1,20 +1,29 @@
 import asyncio
+import os
 from pathlib import Path
 from playwright.async_api import async_playwright
 
 SESSION_FILE = Path(__file__).resolve().parent / "target_session.json"
+CHROME_USER_DATA_DIR = Path(
+    os.environ.get(
+        "TARGET_CHROME_USER_DATA_DIR",
+        Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data",
+    )
+)
+CHROME_PROFILE_DIRECTORY = os.environ.get("TARGET_CHROME_PROFILE", "Profile 2")
 
 async def save_session():
     async with async_playwright() as p:
-        # Launch real installed Google Chrome with a persistent user data directory
+        # Reuse the selected real Chrome profile so its existing login can be used.
         context = await p.chromium.launch_persistent_context(
-            user_data_dir="./chrome_user_data",  # Separate directory for Chrome context
-            channel="chrome",  # Uses real installed Google Chrome
+            user_data_dir=str(CHROME_USER_DATA_DIR),
+            channel="chrome",
             headless=False,
             no_viewport=True,
             args=[
                 "--disable-blink-features=AutomationControlled",
                 "--start-maximized",
+                f"--profile-directory={CHROME_PROFILE_DIRECTORY}",
             ],
         )
 
