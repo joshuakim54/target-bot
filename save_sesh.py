@@ -35,12 +35,21 @@ async def save_session():
             print(f"Chrome profile error: {error}")
             return
 
-        page = context.pages[0] if context.pages else await context.new_page()
+        page = await context.new_page()
 
         print("\nOpening Target Sign-In Page...")
-        await page.goto(
-            "https://www.target.com/account", wait_until="domcontentloaded"
-        )
+        try:
+            response = await page.goto(
+                "https://www.target.com/account",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            print(f"Opened {page.url} (HTTP {response.status if response else 'unknown'})")
+        except Exception as error:
+            print(f"\nCould not open Target: {error}")
+            print(f"Current browser URL: {page.url}")
+            await context.close()
+            return
 
         print("\n" + "=" * 60)
         print(
