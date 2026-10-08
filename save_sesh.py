@@ -1,5 +1,7 @@
 import asyncio
 import os
+import platform
+import subprocess
 from pathlib import Path
 from playwright.async_api import async_playwright
 
@@ -7,16 +9,51 @@ SESSION_FILE = Path(__file__).resolve().parent / "target_session.json"
 CHROME_USER_DATA_DIR = Path(
     os.environ.get(
         "TARGET_CHROME_USER_DATA_DIR",
-        Path(os.environ.get("LOCALAPPDATA", "")) / "Google" / "Chrome" / "User Data",
+        Path(__file__).resolve().parent / "chrome_user_data",
     )
 )
 CHROME_PROFILE_DIRECTORY = os.environ.get("TARGET_CHROME_PROFILE", "Default")
+CHROME_EXTENSIONS_DIRECTORY = Path(
+    os.environ.get(
+        "TARGET_CHROME_EXTENSIONS_DIR",
+        Path(os.environ.get("LOCALAPPDATA", ""))
+        / "Google"
+        / "Chrome"
+        / "User Data"
+        / CHROME_PROFILE_DIRECTORY
+        / "Extensions",
+    )
+)
+
+def close_chrome_instances():
+    """Close all running Chrome processes before opening the selected profile."""
+    if platform.system() != "Windows":
+        return
+
+    subprocess.run(
+        ["taskkill", "/F", "/IM", "chrome.exe", "/T"],
+        check=False,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+
+def installed_extension_paths():
+    if not CHROME_EXTENSIONS_DIRECTORY.is_dir():
+        return []
+
+    return [
+        extension_version
+        for extension_version in CHROME_EXTENSIONS_DIRECTORY.glob("*/*")
+        if (extension_version / "manifest.json").is_file()
+    ]
 
 async def save_session():
     async with async_playwright() as p:
         # Reuse the selected real Chrome profile so its existing login can be used.
         print(f"Using Chrome data directory: {CHROME_USER_DATA_DIR}")
         print(f"Using Chrome profile: {CHROME_PROFILE_DIRECTORY}")
+        close_chrome_instances()
+        extension_paths = installed_extension_paths()
         try:
             context = await p.chromium.launch_persistent_context(
                 user_data_dir=str(CHROME_USER_DATA_DIR),
@@ -27,6 +64,14 @@ async def save_session():
                     "--disable-blink-features=AutomationControlled",
                     "--start-maximized",
                     f"--profile-directory={CHROME_PROFILE_DIRECTORY}",
+                    *(
+                        [
+                            "--load-extension="
+                            + ",".join(str(path) for path in extension_paths)
+                        ]
+                        if extension_paths
+                        else []
+                    ),
                 ],
             )
         except Exception as error:

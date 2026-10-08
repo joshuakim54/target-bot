@@ -13,8 +13,8 @@ ITEM_QUANTITY = 2                                           # Target quantity to
 CVV_CODE = "123"  #NEED TO CHANGE THIS                      # Replace with your card's 3/4-digit CVV
 ARM_PLACE_ORDER = False                                     # Set to True to execute final purchase
 
-POLL_INTERVAL_MIN = 3.0                                     # Min delay between stock checks (sec)
-POLL_INTERVAL_MAX = 5.0                                     # Max delay (sec)
+POLL_INTERVAL_MIN = 5.0                                     # Min delay between stock checks (sec)
+POLL_INTERVAL_MAX = 15.0                                     # Max delay (sec)
 MAX_WAIT_MINUTES = 180                                      # Stops polling after 3 hours
 SHUTDOWN_AFTER_TIMEOUT = True                               # Shut down macOS after the wait expires
 MAX_ATTEMPTS = None                                         # Continue polling until the time limit or stock is found
@@ -25,6 +25,38 @@ SESSION_FILE = BASE_DIR / "target_session.json"
 async def human_delay(min_sec=0.8, max_sec=1.8):
     """Adds randomized delays to mimic human reaction timing."""
     await asyncio.sleep(random.uniform(min_sec, max_sec))
+
+async def random_human_interaction(page):
+    """
+    Simulates realistic human mouse movement, safe clicks on neutral
+    elements (like the product title), and slight scrolling to bypass bot sensors.
+    """
+    try:
+        viewport = page.viewport_size or {"width": 1280, "height": 800}
+        
+        # 1. Natural mouse movement across the viewport
+        target_x = random.randint(int(viewport["width"] * 0.25), int(viewport["width"] * 0.75))
+        target_y = random.randint(int(viewport["height"] * 0.2), int(viewport["height"] * 0.6))
+        await page.mouse.move(target_x, target_y, steps=random.randint(6, 14))
+        await asyncio.sleep(random.uniform(0.15, 0.35))
+
+        # 2. Click safely on a non-interactive element (e.g. product title)
+        neutral_target = page.locator('h1, [data-test="product-title"]').first
+        if await neutral_target.is_visible(timeout=500):
+            box = await neutral_target.bounding_box()
+            if box:
+                click_x = box["x"] + random.uniform(10, min(100, box["width"] * 0.5))
+                click_y = box["y"] + random.uniform(5, min(25, box["height"] * 0.5))
+                await page.mouse.click(click_x, click_y)
+
+        # 3. Occasional subtle scroll (40% chance)
+        if random.random() < 0.4:
+            scroll_delta = random.randint(-120, 120)
+            await page.mouse.wheel(0, scroll_delta)
+            await asyncio.sleep(random.uniform(0.2, 0.4))
+
+    except Exception:
+        pass  # Never let interaction simulation crash the main loop
 
 def shutdown_computer():
     """Requests a shutdown on macOS or Windows."""
@@ -90,7 +122,12 @@ async def run_full_auto_bot(product_url):
             except Exception:
                 pass # Still out of stock
 
-            await asyncio.sleep(random.uniform(POLL_INTERVAL_MIN, POLL_INTERVAL_MAX))
+            # Wait with simulated human activity (mouse moves, safe clicks, scrolling)
+            wait_time = random.uniform(POLL_INTERVAL_MIN, POLL_INTERVAL_MAX)
+            await asyncio.sleep(wait_time * 0.4)
+            await random_human_interaction(page)
+            await asyncio.sleep(wait_time * 0.6)
+
             try:
                 await page.reload(wait_until="domcontentloaded")
             except Exception:
