@@ -3,6 +3,9 @@ import os
 import platform
 import subprocess
 from pathlib import Path
+import platform
+import subprocess
+import time
 from playwright.async_api import async_playwright
 
 SESSION_FILE = Path(__file__).resolve().parent / "target_session.json"
@@ -25,17 +28,32 @@ CHROME_EXTENSIONS_DIRECTORY = Path(
     )
 )
 
-def close_chrome_instances():
-    """Close all running Chrome processes before opening the selected profile."""
+CLOSE_CHROME_PROCESSES = True
+
+def close_chrome_processes():
+    """Close running Chrome processes before opening the selected profile."""
+    if not CLOSE_CHROME_PROCESSES:
+        return
+
     if platform.system() != "Windows":
         return
 
-    subprocess.run(
+    result = subprocess.run(
         ["taskkill", "/F", "/IM", "chrome.exe", "/T"],
         check=False,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.PIPE,
+        text=True,
     )
+    if result.returncode != 0:
+        details = (result.stderr or "").strip() or "taskkill returned a failure status."
+        raise RuntimeError(f"Could not close Chrome processes: {details}")
+
+
+def close_chrome_instances():
+    """Backward-compatible alias for legacy call sites."""
+    close_chrome_processes()
+
 
 def installed_extension_paths():
     if not CHROME_EXTENSIONS_DIRECTORY.is_dir():
@@ -48,6 +66,12 @@ def installed_extension_paths():
     ]
 
 async def save_session():
+    try:
+        close_chrome_processes()
+    except RuntimeError as error:
+        print(f"\n{error}")
+        return
+
     async with async_playwright() as p:
         # Reuse the selected real Chrome profile so its existing login can be used.
         print(f"Using Chrome data directory: {CHROME_USER_DATA_DIR}")
@@ -80,12 +104,21 @@ async def save_session():
             print(f"Chrome profile error: {error}")
             return
 
-        page = context.pages[0] if context.pages else await context.new_page()
+        page = await context.new_page()
 
         print("\nOpening Target Sign-In Page...")
-        await page.goto(
-            "https://www.target.com/account", wait_until="domcontentloaded"
-        )
+        try:
+            response = await page.goto(
+                "https://www.target.com/account",
+                wait_until="domcontentloaded",
+                timeout=30000,
+            )
+            print(f"Opened {page.url} (HTTP {response.status if response else 'unknown'})")
+        except Exception as error:
+            print(f"\nCould not open Target: {error}")
+            print(f"Current browser URL: {page.url}")
+            await context.close()
+            return
 
         print("\n" + "=" * 60)
         print(
